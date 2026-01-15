@@ -1,0 +1,323 @@
+13. Execute Basic Commands in Docker
+Objective:
+
+Learn and verify basic Docker commands for container and image management.
+
+Requirements:
+
+Ubuntu EC2 instance (or local machine) with Docker installed.
+
+Docker service running and your user in the Docker group.
+
+Run all commands in the EC2 terminal:
+
+Step 1: Check Docker Version
+docker --version
+
+
+Expected: Docker version 24.x.x
+
+Step 2: Pull an Image
+docker pull ubuntu:22.04
+
+
+Downloads the Ubuntu 22.04 image.
+
+Step 3: List Available Images
+docker images
+
+Step 4: Create and Start a Container
+docker run -it --name myubuntu ubuntu:22.04 /bin/bash
+
+
+This opens a bash shell inside the container.
+
+Step 5: Inside the Container
+
+Run a few commands:
+
+ls
+pwd
+cat /etc/os-release
+
+Step 6: Exit the Container
+exit
+
+Step 7: List All Containers
+docker ps -a
+
+Step 8: Start, Stop, and Remove Containers
+docker start myubuntu
+docker stop myubuntu
+docker rm myubuntu
+
+Step 9: Remove Images
+docker rmi ubuntu:22.04
+
+Step 10: Clean Up Unused Data
+docker system prune -f
+
+14. Execute Basic Commands in Git
+Objective:
+
+Use essential Git commands to manage version control locally.
+
+Requirements:
+
+Git installed on your EC2 instance or local system.
+
+A folder to use as a test repository.
+
+Run these in terminal (EC2 or local machine):
+
+Step 1: Configure Git
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+
+Step 2: Initialize Repository
+mkdir git-practice
+cd git-practice
+git init
+
+Step 3: Create a File
+echo "This is my first Git file" > file1.txt
+
+Step 4: Check Repository Status
+git status
+
+Step 5: Add File to Staging
+git add file1.txt
+
+Step 6: Commit File
+git commit -m "Added file1.txt as first commit"
+
+Step 7: Create a Branch
+git branch feature
+git checkout feature
+
+Step 8: Merge Branch
+git checkout main
+git merge feature
+
+Step 9: View Log
+git log --oneline
+
+Step 10: Delete Branch
+git branch -d feature
+
+15. Create a Git Repository, Add a File, Commit, and Push to Remote
+Objective:
+
+Create a local Git repo, connect to a remote GitHub repo, and push code.
+
+Requirements:
+
+Git installed
+
+GitHub account
+
+Remote repo (created manually or via command line)
+
+Run locally or on EC2 (if Git configured):
+
+Step 1: Create a Local Folder
+mkdir git-demo
+cd git-demo
+
+Step 2: Initialize Git
+git init
+
+Step 3: Add a File
+echo "Hello GitHub from Jenkins Lab" > hello.txt
+
+Step 4: Stage and Commit
+git add hello.txt
+git commit -m "Initial commit with hello.txt"
+
+Step 5: Add Remote Repository
+
+(Replace <username> with your GitHub username)
+
+git remote add origin https://github.com/<username>/git-demo.git
+
+Step 6: Push to GitHub
+git branch -M main
+git push -u origin main
+
+
+If prompted for username/password — use your GitHub Personal Access Token as password.
+
+Step 7: Verify
+
+Open your GitHub repo → you should see hello.txt uploaded.
+
+16. Set Up a Basic CI Pipeline Using Jenkins
+Objective:
+
+Configure a simple CI pipeline to build a “Hello World” Java project.
+
+Requirements:
+
+Jenkins installed and running on AWS EC2.
+
+Maven and JDK configured in Jenkins.
+
+GitHub repository with a simple Java project.
+
+Step 1: Create Simple Java Project
+
+Run these in EC2 or your local machine:
+
+mkdir hello-world
+cd hello-world
+
+
+Create Hello.java:
+
+cat <<EOF > Hello.java
+public class Hello {
+    public static void main(String[] args) {
+        System.out.println("Hello, Jenkins CI/CD!");
+    }
+}
+EOF
+
+
+Initialize Git and push:
+
+git init
+git add .
+git commit -m "Added Hello World Java program"
+git branch -M main
+git remote add origin https://github.com/<username>/hello-world.git
+git push -u origin main
+
+Step 2: Create Jenkins Pipeline Job
+Option 1: Freestyle Job
+
+Open Jenkins → “New Item” → select Freestyle Project.
+
+Enter project name: HelloWorld-CI.
+
+Under Source Code Management → select Git → paste your repo URL.
+
+Under Build Steps → choose Execute Shell → command:
+
+javac Hello.java
+java Hello
+
+
+Save → Build Now.
+
+Console Output should print:
+
+Hello, Jenkins CI/CD!
+
+Option 2: Pipeline Job
+
+If you prefer Jenkinsfile:
+
+Create a file in repo root:
+
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                sh 'javac Hello.java'
+            }
+        }
+        stage('Run') {
+            steps {
+                sh 'java Hello'
+            }
+        }
+    }
+}
+
+
+Push this file to GitHub and configure Jenkins:
+
+“New Item” → “Pipeline”
+
+Choose “Pipeline script from SCM”
+
+SCM → Git → Repo URL
+
+Branch → main
+
+Script Path → Jenkinsfile
+
+Save → Build Now
+
+Output in console should show:
+
+Hello, Jenkins CI/CD!
+
+17. Build a Docker Image from Dockerfile and Run a Container
+Objective:
+
+Create your own Docker image and run it as a container.
+
+Requirements:
+
+Docker installed and running.
+
+Basic Linux commands knowledge.
+
+Run all commands on EC2 terminal or local Docker host:
+
+Step 1: Create Project Folder
+mkdir docker-build-demo
+cd docker-build-demo
+
+Step 2: Create a Simple Application
+
+Create app.sh:
+
+cat <<EOF > app.sh
+#!/bin/bash
+echo "Hello from custom Docker image!"
+EOF
+chmod +x app.sh
+
+Step 3: Create Dockerfile
+cat <<EOF > Dockerfile
+# Use base image
+FROM ubuntu:22.04
+
+# Set working directory
+WORKDIR /app
+
+# Copy application file
+COPY app.sh .
+
+# Provide execute permission
+RUN chmod +x app.sh
+
+# Command to run when container starts
+CMD ["./app.sh"]
+EOF
+
+Step 4: Build Docker Image
+docker build -t mycustomimage:1.0 .
+
+
+Expected: Successfully built ...
+
+Step 5: List Docker Images
+docker images
+
+Step 6: Run Docker Container
+docker run --name mycontainer mycustomimage:1.0
+
+
+Expected output:
+
+Hello from custom Docker image!
+
+Step 7: Verify and Clean Up
+docker ps -a
+docker stop mycontainer
+docker rm mycontainer
+docker rmi mycustomimage:1.0

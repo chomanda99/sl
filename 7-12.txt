@@ -1,0 +1,337 @@
+7) RUN SELENIUM TESTS IN JENKINS USING MAVEN — from scratch
+WHAT YOU NEED (from scratch)
+
+A Maven project in GitHub containing Selenium tests. I’ll give a minimal project structure you can create and push.
+
+Chrome + ChromeDriver on the machine where tests run (master or slave).
+
+Jenkins job configured to run mvn test.
+
+CREATE A MINIMAL MAVEN + SELENIUM PROJECT (run locally then push to GitHub or create on EC2)
+
+On your local machine or master EC2:
+
+# Create project
+mvn archetype:generate -DgroupId=com.selenium.demo -DartifactId=selenium-demo \
+  -DarchetypeArtifactId=maven-archetype-quickstart -DinteractiveMode=false
+cd selenium-demo
+
+
+Edit pom.xml — add Selenium and Surefire plugin inside <dependencies> and <build>:
+
+Insert this into <dependencies>:
+
+<dependency>
+  <groupId>org.seleniumhq.selenium</groupId>
+  <artifactId>selenium-java</artifactId>
+  <version>4.10.0</version>
+</dependency>
+<dependency>
+  <groupId>junit</groupId>
+  <artifactId>junit</artifactId>
+  <version>4.13.2</version>
+  <scope>test</scope>
+</dependency>
+
+
+Insert this into <build> to enable test reports:
+
+<plugins>
+  <plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <version>3.0.0-M7</version>
+  </plugin>
+</plugins>
+
+
+Create a test file src/test/java/com/selenium/demo/GoogleTest.java:
+
+package com.selenium.demo;
+
+import org.junit.*;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+
+public class GoogleTest {
+    private WebDriver driver;
+
+    @Before
+    public void setUp() {
+        System.setProperty("webdriver.chrome.driver", "/usr/bin/chromedriver");
+        // run headless if no display: use ChromeOptions in real tests
+        driver = new ChromeDriver();
+    }
+
+    @Test
+    public void openGoogle() {
+        driver.get("https://www.google.com");
+        Assert.assertTrue(driver.getTitle().contains("Google"));
+    }
+
+    @After
+    public void tearDown() {
+        if (driver != null) driver.quit();
+    }
+}
+
+
+Commit & push to GitHub:
+
+git init
+git add .
+git commit -m "Add selenium demo"
+git branch -M main
+git remote add origin <GITHUB_REPO>
+git push -u origin main
+
+INSTALL CHROME & CHROMEDRIVER (run on node where tests will run — master or slave — I recommend slave)
+# Install Chrome (on Ubuntu)
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y ./google-chrome-stable_current_amd64.deb || sudo apt -f install -y
+
+# find Chrome major version
+google-chrome --version
+CHROME_MAJOR=$(google-chrome --version | awk '{print $3}' | cut -d '.' -f1)
+
+# Install matching chromedriver using chromedriver.storage
+# For simplicity, fetch latest stable chromedriver:
+CHROME_DRIVER_VERSION=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE)
+wget https://chromedriver.storage.googleapis.com/${CHROME_DRIVER_VERSION}/chromedriver_linux64.zip
+unzip chromedriver_linux64.zip
+sudo mv chromedriver /usr/bin/chromedriver
+sudo chmod +x /usr/bin/chromedriver
+
+# Optionally verify
+/usr/bin/chromedriver --version
+
+
+If running on headless server without GUI either:
+
+Use Chrome headless mode (modify tests to set ChromeOptions with --headless=new and --no-sandbox), or
+
+Install Xvfb and run display for tests:
+
+sudo apt install -y xvfb
+xvfb-run -s "-screen 0 1920x1080x24" mvn test
+
+CREATE JENKINS JOB (where: Jenkins UI)
+
+New Item → Freestyle (or Maven project) → Name: Selenium-Maven-Test.
+
+Source Code Management → Git → <GITHUB_REPO>.
+
+Build → If Freestyle: Add Build step Invoke top-level Maven targets → Goals: clean test.
+
+Post-build → Publish JUnit test result report → **/target/surefire-reports/*.xml
+
+Save → Build Now → Console Output will show test run and BUILD SUCCESS.
+
+Notes about headless mode: On servers, modify test code to use ChromeOptions:
+
+ChromeOptions options = new ChromeOptions();
+options.addArguments("--headless=new");
+options.addArguments("--no-sandbox");
+options.addArguments("--disable-dev-shm-usage");
+WebDriver driver = new ChromeDriver(options);
+
+8) BUILD PIPELINE PROJECT IN JENKINS — from scratch
+WHAT YOU NEED
+
+GitHub repo with Jenkinsfile, or configure pipeline script in Jenkins UI.
+
+Jenkins pipeline plugin installed (installed by default in many Jenkins installations).
+
+SIMPLE PIPELINE Jenkinsfile (place in repo root): create locally and push to GitHub
+pipeline {
+  agent any
+
+  tools {
+    maven 'Maven'   // configure a Maven installation in Jenkins Global Tool Configuration called 'Maven'
+    jdk 'JDK17'     // configure a JDK installation named 'JDK17' in Jenkins
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: '<GITHUB_REPO>', branch: 'main'
+      }
+    }
+    stage('Build') {
+      steps {
+        sh 'mvn -B clean package'
+      }
+    }
+    stage('Test') {
+      steps {
+        sh 'mvn test'
+      }
+    }
+    stage('Archive') {
+      steps {
+        archiveArtifacts artifacts: 'target/*.jar'
+      }
+    }
+  }
+
+  post {
+    success { echo 'Pipeline Success' }
+    failure { echo 'Pipeline Failed' }
+  }
+}
+
+
+Add Jenkinsfile to repo, commit & push.
+
+In Jenkins: New Item → Pipeline → choose “Pipeline script from SCM” → SCM: Git → repo URL → Branch: main → Script Path: Jenkinsfile.
+
+Save → Build Now → watch Stage View and Console Output.
+
+Where to run: create file locally or in repo; Jenkins executes pipeline on master or assigned agent.
+
+9) GIT OPERATIONS — from scratch (commands to run on your local machine or EC2)
+Initialize local repo, link remote, commit, push
+# create project folder
+mkdir git-playground
+cd git-playground
+
+# init
+git init
+echo "Hello world" > README.md
+git add README.md
+git commit -m "initial commit"
+
+# create remote repo on GitHub via web UI named git-playground
+# then add remote:
+git remote add origin https://github.com/<username>/git-playground.git
+
+# push to remote
+git branch -M main
+git push -u origin main
+
+Clone, branch, merge, pull, revert examples
+# clone
+git clone https://github.com/<username>/git-playground.git
+cd git-playground
+
+# create and switch to new branch
+git checkout -b feature1
+
+# modify and commit
+echo "feature work" >> feature.txt
+git add feature.txt
+git commit -m "add feature1"
+
+# push branch
+git push -u origin feature1
+
+# switch back to main and merge
+git checkout main
+git pull origin main
+git merge feature1
+
+# push merged changes
+git push origin main
+
+# revert a commit (example)
+git log --oneline         # find <commit-id>
+git revert <commit-id>    # creates a new commit that undoes the changes
+git push origin main
+
+Handling conflicts
+
+If git pull causes conflicts, open the file, fix conflicts, then:
+
+git add <file>
+git commit -m "resolve conflict"
+git push
+
+10) PULL UBUNTU IMAGE IN DOCKER AND EXECUTE BASH — from scratch (run on any machine with Docker)
+On EC2 or local (where Docker installed)
+# verify docker
+docker --version
+
+# pull ubuntu image
+docker pull ubuntu:22.04
+
+# list images
+docker images
+
+# run container with interactive bash
+docker run -it --name ubuntu-test ubuntu:22.04 /bin/bash
+
+# inside container (now at root prompt)
+cat /etc/os-release
+ls -la
+
+# exit container
+exit
+
+# optional: start the container again
+docker start -ai ubuntu-test
+
+# remove container
+docker rm ubuntu-test
+
+# remove image
+docker rmi ubuntu:22.04
+
+
+Notes: Use sudo if docker requires it (e.g., sudo docker run ...) unless your user is in docker group.
+
+11) PULL FILES FROM GITHUB, MODIFY, PUSH — from scratch (run on local or EC2)
+# clone repo
+git clone https://github.com/<username>/<repo>.git
+cd <repo>
+
+# list files
+ls -la
+
+# create or modify file
+echo "Some change" >> CHANGELOG.md
+
+# stage & commit
+git add CHANGELOG.md
+git commit -m "Update changelog"
+
+# push to remote
+git push origin main
+
+
+If repository is private you will need credentials. Use one of:
+
+HTTPS with username/password (or personal access token as password for GitHub), or
+
+SSH: set up an SSH key on your local machine and add the public key to GitHub account → clone using git@github.com:username/repo.git.
+
+To create a personal access token (PAT) on GitHub: GitHub Web UI → Settings → Developer settings → Personal access tokens → Generate token with repo scope. Use it as password for HTTPS pushes.
+
+12) PULL DOCKER IMAGES, LIST, AND REMOVE IMAGE — from scratch (run on Docker host)
+# pull images
+docker pull ubuntu:22.04
+docker pull nginx:stable
+docker pull alpine:3.18
+
+# list images
+docker images
+# or
+docker image ls
+
+# run a container
+docker run -d --name mynginx nginx:stable
+
+# stop & remove container
+docker stop mynginx
+docker rm mynginx
+
+# remove image (must remove containers using it first)
+docker rmi alpine:3.18
+
+# remove all dangling images
+docker image prune -f
+
+# remove unused images (careful)
+docker image prune -a -f
+
+
+If docker rmi complains about dependent containers, run docker ps -a then remove containers first.

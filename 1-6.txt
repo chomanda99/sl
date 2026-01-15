@@ -1,0 +1,340 @@
+1) Create AWS EC2 instance and connect with PuTTY
+
+What you’ll use
+
+AWS Console (browser) — to create instance and security group
+
+Windows machine with PuTTY and PuTTYgen — to connect
+
+Steps (AWS Console)
+
+Launch EC2 instance (master)
+
+EC2 → Launch Instance
+
+Name: jenkins-master
+
+AMI: Ubuntu Server 22.04 LTS
+
+Instance type: t2.micro (free tier)
+
+Key pair: Create new key pair → name mykey → download mykey.pem
+
+Network/Security group: Create/choose security group allowing:
+
+SSH (TCP 22) — Source: your IP (best) or 0.0.0.0/0 (less secure)
+
+HTTP (TCP 80) optional
+
+Jenkins will use 8080 — allow TCP 8080 from your IP
+
+Storage: default 8GB OK
+
+Launch instance
+
+Note the Public IPv4 address of the instance (call it <MASTER_IP>).
+
+Repeat to create a second EC2 instance (slave) named jenkins-slave with the same key pair (mykey.pem) and allow SSH (22). Note its IP <SLAVE_IP>.
+
+Steps (Windows) — convert key for PuTTY
+
+PuTTY requires .ppk.
+
+Open PuTTYgen → Load → choose file type All Files → select mykey.pem.
+
+Click Save private key → save as mykey.ppk. (You can optionally set a passphrase.)
+
+Connect with PuTTY (Windows)
+
+Open PuTTY
+
+Host Name: ubuntu@<MASTER_IP> (Ubuntu default user is ubuntu)
+
+Port: 22
+
+Connection → SSH → Auth → Private key file for authentication → browse mykey.ppk
+
+Open → Accept host key
+
+On success you’ll see a shell prompt.
+
+Verification (EC2 shell):
+
+whoami
+# expected: ubuntu
+hostname
+
+2) Install Docker on the EC2 instance and show version
+
+Where to run: on the EC2 terminal (SSH into <MASTER_IP> via PuTTY or ssh -i mykey.pem ubuntu@<MASTER_IP> from Linux/PowerShell OpenSSH)
+
+Commands (run on EC2)
+# update
+sudo apt update
+sudo apt upgrade -y
+
+# install docker from Ubuntu repo (simple method)
+sudo apt install -y docker.io
+
+# enable & start docker
+sudo systemctl enable --now docker
+
+# allow ubuntu user to run docker without sudo (optional, requires re-login)
+sudo usermod -aG docker ubuntu
+
+# show docker version
+docker --version
+
+# test docker run (will download and run hello-world)
+sudo docker run --rm hello-world
+
+
+Expected:
+
+docker --version outputs Docker version ...
+
+hello-world prints messages that Docker ran a container successfully.
+
+If you added ubuntu to docker group, either exit and re-login or run newgrp docker before using docker without sudo.
+
+3) Install Git on the EC2 instance and show version
+
+Where to run: EC2 terminal (same instance)
+
+Commands (run on EC2)
+sudo apt update
+sudo apt install -y git
+
+# check version
+git --version
+
+# (optional) set global config
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+
+
+Expected: git version 2.xx.x
+
+4) Compile project in Jenkins using Maven
+
+Where to run: mixture of EC2 master terminal (to install Jenkins & Maven) and Jenkins Web UI (to configure/build job).
+
+I’ll show how to install Jenkins on the master if you don’t already have it, install Java & Maven, then configure a Maven job.
+
+A — Install Java, Jenkins & Maven on master (run on EC2)
+# 1. Java (Jenkins requires Java)
+sudo apt update
+sudo apt install -y openjdk-17-jdk
+
+# verify java
+java -version
+
+# 2. Add Jenkins repo & install (recommended approach)
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
+  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list
+sudo apt update
+sudo apt install -y jenkins
+
+# start and enable jenkins
+sudo systemctl enable --now jenkins
+
+# check status
+sudo systemctl status jenkins --no-pager
+
+# 3. Install Maven
+sudo apt install -y maven
+mvn -version
+
+
+Jenkins by default listens on port 8080. Make sure security group allows port 8080 from your IP.
+
+B — Open Jenkins UI (your Windows browser)
+
+URL: http://<MASTER_IP>:8080
+
+First time: Jenkins asks for initial admin password:
+
+# on EC2 to show password
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+
+Paste it into the UI, install suggested plugins, create admin user.
+
+C — Create Maven-based job in Jenkins (Jenkins UI)
+
+Dashboard → New Item → name Maven-Build → Freestyle project (or choose Maven project if plugin installed) → OK.
+
+Source Code Management → Git → Repository URL: <GIT_REPO_URL> (e.g., https://github.com/yourname/sample-maven-app.git)
+
+If private, add credentials (username/password or SSH key).
+
+Build:
+
+If Freestyle: Add build step → Invoke top-level Maven targets → Goals: clean install
+
+If Maven project: specify Root POM (default pom.xml) and Goals clean install
+
+Save.
+
+Click Build Now (left panel).
+
+Click the build number → Console Output to view logs.
+
+What Jenkins will run: mvn clean install on the Jenkins master. If dependencies build, you should see BUILD SUCCESS.
+
+Troubleshooting (if Maven not found):
+
+Ensure mvn -version on the machine Jenkins runs allows Jenkins to find Maven. You may need to set global tool configuration in Jenkins:
+
+Manage Jenkins → Global Tool Configuration → Maven → Add Maven installation (name and install automatically or provide path /usr/share/maven).
+
+5) Create slave (agent) node in Jenkins
+
+Where to run: on EC2 master (Jenkins UI) to configure node; on EC2 slave terminal to set up SSH keys and agent user.
+
+I’ll use SSH launch method (Jenkins connects to slave via SSH and runs agent).
+
+A — Prepare the slave EC2 instance (jenkins-slave)
+
+SSH to <SLAVE_IP> with the same key mykey.pem:
+
+ssh -i mykey.pem ubuntu@<SLAVE_IP>
+
+
+Create a directory for Jenkins agent and (optionally) create a dedicated jenkins user:
+
+# Option 1: use ubuntu user (quick)
+# ensure ssh server is installed and running
+sudo apt update
+sudo apt install -y openssh-server git
+sudo systemctl enable --now ssh
+
+# Option 2: create dedicated user
+sudo useradd -m -s /bin/bash jenkins
+# allow passwordless sudo for jenkins (optional)
+sudo usermod -aG sudo jenkins
+
+# Create remote root dir Jenkins will use:
+sudo mkdir -p /home/jenkins/agent
+sudo chown -R jenkins:jenkins /home/jenkins/agent
+
+
+If you created jenkins user, add your public key to its authorized_keys:
+
+On your local Windows, you have mykey.pem. Convert to public key or extract public key on master and add. Easiest: copy contents of ~/.ssh/authorized_keys from ubuntu or add via:
+
+# on slave as jenkins (run as ubuntu then switch)
+sudo -u jenkins mkdir -p /home/jenkins/.ssh
+sudo -u jenkins bash -c 'echo "<PASTE_YOUR_PUBLIC_KEY>" >> /home/jenkins/.ssh/authorized_keys'
+sudo chmod 700 /home/jenkins/.ssh
+sudo chmod 600 /home/jenkins/.ssh/authorized_keys
+
+
+To get public key from your .pem:
+
+On Windows using OpenSSH tool (PowerShell):
+
+ssh-keygen -y -f mykey.pem > mykey.pub
+# open mykey.pub, copy its contents
+
+
+Ensure SSH is running and reachable:
+
+sudo systemctl status ssh
+# from your local machine, test:
+ssh -i mykey.pem jenkins@<SLAVE_IP>
+
+B — Configure node in Jenkins UI (master)
+
+Jenkins → Manage Jenkins → Manage Nodes and Clouds → New Node
+
+Node name: slave1
+
+Type: Permanent Agent
+
+of Executors: 1
+
+Remote root directory: /home/jenkins/agent (or /home/ubuntu if using ubuntu user)
+
+Labels: slave1 (or <SLAVE_LABEL>)
+
+Launch method: Launch agents via SSH
+
+Host: <SLAVE_IP>
+
+Credentials: Click Add → SSH Username with private key
+
+Username: jenkins (or ubuntu)
+
+Private Key: choose Enter directly and paste the contents of mykey.pem (the PEM private key). Jenkins can use the PEM to SSH.
+
+Host Key Verification Strategy: Default or Non verifying for lab (not recommended in prod).
+
+Click Save. Jenkins will try to connect and start the agent.
+
+Verification:
+
+Node shows Connected and Idle.
+
+Console log for node shows Agent connected.
+
+Alternative: If SSH launch fails, you can use the agent.jar method:
+
+In Jenkins node config, set Launch method to Launch agent via Java Web Start or Launch agent by connecting it to the controller:
+
+On slave run:
+
+# download agent.jar on slave
+mkdir -p /home/jenkins/agent
+cd /home/jenkins/agent
+wget http://<MASTER_IP>:8080/jnlpJars/agent.jar
+# run agent (example)
+java -jar agent.jar -jnlpUrl http://<MASTER_IP>:8080/computer/slave1/slave-agent.jnlp -secret <secret-from-jenkins>
+
+
+But SSH launcher is simpler.
+
+6) Assign project to slave node and build project
+
+Where to run: Jenkins Web UI (master). Jenkins will execute build commands on the slave.
+
+Steps (Jenkins UI)
+
+Open the job you previously created (e.g., Maven-Build) → Configure.
+
+Under General → check Restrict where this project can be run.
+
+In Label Expression put the node label you assigned (e.g., slave1).
+
+Save.
+
+Run build
+
+Click Build Now.
+
+Open the build → Console Output.
+
+What to look for in Console Output
+
+At top you should see:
+
+Running on slave1 in /home/jenkins/agent/workspace/Maven-Build
+
+
+Then standard Maven output, ending with:
+
+[INFO] BUILD SUCCESS
+
+If you need to execute arbitrary shell commands on the slave (for debugging)
+
+In the Jenkins job, add a Build step → Execute shell and add commands such as:
+
+whoami
+pwd
+ls -la
+mvn -version
+
+
+These run on the slave workspace.
